@@ -1,0 +1,124 @@
+---
+title: "Coursera - Practical Machine Learning Project"
+output:
+   html_document:
+     keep_md: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Background###
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+###Libraries###
+We first load the R packages needed for analysis and then download the training and testing data sets from the given URLs
+```{r}
+library(caret); 
+library(rattle); 
+library(rpart); 
+library(rpart.plot);
+library(randomForest);
+```
+
+```{r}
+TrainData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),header=TRUE)
+dim(TrainData)
+```
+
+```{r}
+TestData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header=TRUE)
+dim(TestData)
+```
+
+The training data set is made of 19622 observations on 160 columns. We can notice that many columns have NA values or blank values on almost every observation. So we will remove them, because they will not produce any information. The first seven columns give information about the people who did the test. We will not take them in our model.
+
+```{r}
+# Here we get the indexes of the columns having at least 90% of NA or blank values on the training dataset
+indColToRemove <- which(colSums(is.na(TrainData) |TrainData=="")>0.9*dim(TrainData)[1]) 
+TrainDataClean <- TrainData[,-indColToRemove]
+TrainDataClean <- TrainDataClean[,-c(1:7)]
+dim(TrainDataClean)
+```
+
+```{r}
+# We do the same for the test set
+indColToRemove <- which(colSums(is.na(TestData) |TestData=="")>0.9*dim(TestData)[1]) 
+TestDataClean <- TestData[,-indColToRemove]
+TestDataClean <- TestDataClean[,-1]
+dim(TestDataClean)
+```
+
+####Data Splitting####
+In order to get out-of-sample errors, we split the cleaned training set trainData into a training set (train, 70%) for prediction and a validation set (valid 30%) to compute the out-of-sample errors.
+
+```{r}
+set.seed(1000) 
+inTrain <- createDataPartition(TrainDataClean$classe, p = 0.7, list = FALSE)
+train <- TrainDataClean[inTrain, ]
+valid <- TrainDataClean[-inTrain, ]
+```
+
+###Prediction Algorithms###
+We use classification trees and random forests to predict the outcome.
+
+####Classification trees####
+
+We will consider 5-fold cross validation (default setting in trainControl function is 10) when implementing the algorithm to save a little computing time.
+
+```{r}
+control <- trainControl(method = "cv", number = 5)
+fit_rpart <- train(classe ~ ., data = train, method = "rpart", 
+                   trControl = control)
+print(fit_rpart, digits = 4)
+```
+
+```{r}
+fancyRpartPlot(fit_rpart$finalModel)
+```
+
+Now we will predict outcomes using validation set and show prediction result
+
+```{r}
+predict_rpart <- predict(fit_rpart, valid)
+(conf_rpart <- confusionMatrix(valid$classe, predict_rpart))
+```
+
+```{r}
+(accuracy_rpart <- conf_rpart$overall[1])
+```
+
+From the confusion matrix, the accuracy rate is 0.5. Using classification tree does not predict the outcome classe very well.
+
+####Random forests####
+Since classification tree method does not perform well, we try random forest method instead.
+
+```{r}
+fit_rf <- train(classe ~ ., data = train, method = "rf", 
+                   trControl = control)
+print(fit_rf, digits = 4)
+```
+
+Now we will predict outcomes using validation set and show prediction result
+
+```{r}
+predict_rf <- predict(fit_rf, valid)
+(conf_rf <- confusionMatrix(valid$classe, predict_rf))
+```
+
+
+```{r}
+(accuracy_rf <- conf_rf$overall[1])
+```
+
+For this dataset, random forest method is way better than classification tree method. The accuracy rate is 0.993. This may be due to the fact that many predictors are highly correlated. Random forests chooses a subset of predictors at each split and decorrelate the trees. This leads to high accuracy, although this algorithm is sometimes difficult to interpret and computationally inefficient.
+
+###Prediction on Testing Set###
+We now use random forests to predict the outcome variable classe for the testing set.
+```{r}
+(predict(fit_rf, TestDataClean))
+```
+
+
